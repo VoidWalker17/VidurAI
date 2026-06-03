@@ -274,53 +274,37 @@ export default function App() {
   };
 
   const sendMessage = async (text) => {
-  if (!text.trim() || loading) return;
-  setMessages((prev) => [...prev, { role: "user", text }]);
-  setInput("");
-  setLoading(true);
-  setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
+    if (!text.trim() || loading) return;
+    setMessages((prev) => [...prev, { role: "user", text }]);
+    setInput("");
+    setLoading(true);
+    setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
 
-  try {
-    const response = await fetch("http://127.0.0.1:8000/chat", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message: text }),
-    });
-    const data = await response.json();
-    const fullReply = data.reply;
-
-    // Add empty bot message first
-    setMessages((prev) => [...prev, { role: "bot", text: "" }]);
-    setLoading(false);
-
-    // Typewriter effect — reveal one character at a time
-    let i = 0;
-    const interval = setInterval(() => {
-      i++;
-      setMessages((prev) => {
-        const updated = [...prev];
-        updated[updated.length - 1] = { role: "bot", text: fullReply.slice(0, i) };
-        return updated;
+    try {
+      const response = await fetch("http://127.0.0.1:8000/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: text }),
       });
-      chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
-      if (i >= fullReply.length) {
-        clearInterval(interval);
-        const cleanText = fullReply
-          .replace(/भगवद गीता.*?\d+:\d+/g, "")
-          .replace(/Bhagavad Gita.*?\d+:\d+/gi, "")
-          .replace(/\d+:\d+/g, "")
-          .trim();
-        speak(cleanText);
-      }
-    }, 30);
+      const data = await response.json();
+      const fullReply = data.reply;
 
-  } catch {
-    setMessages((prev) => [...prev, { role: "bot", text: "Backend से connection नहीं हो पाया।" }]);
-    setLoading(false);
-  }
+      // Show full text immediately
+      setMessages((prev) => [...prev, { role: "bot", text: fullReply }]);
+      setLoading(false);
+      setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
 
-  setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
-};
+      // Speak the full reply cleanly — no verse numbers
+      const cleanText = fullReply
+        .replace(/\d+:\d+/g, "")
+        .trim();
+      speak(cleanText);
+
+    } catch {
+      setMessages((prev) => [...prev, { role: "bot", text: "Backend से connection नहीं हो पाया।" }]);
+      setLoading(false);
+    }
+  };
 
   const startListening = () => {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;

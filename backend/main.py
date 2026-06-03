@@ -3,11 +3,17 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from deep_translator import GoogleTranslator
 import requests
-import pyttsx3
+from rag import load_gita, find_relevant_verses
 
 app = FastAPI()
 
-# Allow React frontend to talk to this backend
+# Load Gita verses into vector DB on startup
+@app.on_event("startup")
+async def startup_event():
+    print("Loading Bhagavad Gita into memory...")
+    load_gita()
+    print("Gita loaded. VidurAI is ready.")
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -15,14 +21,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# This defines what the incoming request looks like
 class UserMessage(BaseModel):
     message: str
-
-def speak(text):
-    engine = pyttsx3.init()
-    engine.say(text)
-    engine.runAndWait()
 
 @app.post("/chat")
 async def chat(user_message: UserMessage):
@@ -31,20 +31,33 @@ async def chat(user_message: UserMessage):
     # Step 1: Translate Hindi → English
     english_input = GoogleTranslator(source='hi', target='en').translate(hindi_input)
 
-    # Step 2: Send to Llama3.2 via Ollama
+    # Step 2: Find relevant Gita verses using RAG
+    relevant_verses = find_relevant_verses(english_input, n=3)
+    
+    # Build context from real verses
+    verse_context = ""
+    for v in relevant_verses:
+        verse_context += f"Chapter {v['chapter']}, Verse {v['verse']}: {v['text']}\n\n"
+
+    # Step 3: Build prompt with real verses
+    prompt = f"""The user asks: "{english_input}"
+
+Here are the most relevant verses from the Bhagavad Gita:
+
+{verse_context}
+
+Using ONLY these verses as your source, answer the user's question as Vidur — the wisest minister from the Mahabharata. Be warm, wise, and concise. Reference the verses naturally in your answer."""
+
+    # Step 4: Send to Llama3.2 via Ollama
     response = requests.post("http://localhost:11434/api/generate", json={
         "model": "llama3.2:3b",
-        "prompt": english_input,
-        "system": "You are Vidur, the wisest minister from the Mahabharata. Answer every question using the teachings and wisdom of the Bhagavad Gita. Be thoughtful, calm, and deeply wise in your responses.",
+        "prompt": prompt,
         "stream": False
     })
 
     english_reply = response.json()["response"]
 
-    # Step 3: Translate English → Hindi
+    # Step 5: Translate English → Hindi
     hindi_reply = GoogleTranslator(source='en', target='hi').translate(english_reply)
-
-    # Step 4: Speak the reply
-    speak(hindi_reply)
 
     return {"reply": hindi_reply}
